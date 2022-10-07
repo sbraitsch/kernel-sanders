@@ -32,10 +32,12 @@ struct ColorCode(u8);
 
 impl ColorCode {
     fn new(foreground: Color, background: Color) -> ColorCode {
+        // bitshifting to fit 2 4bit colors (fg, bg) into one u8
         ColorCode((background as u8) << 4 | (foreground as u8))
     }
 }
 
+// repr(C) to assert correct ordering of fields since rust doesn't
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 struct ScreenChar {
@@ -43,9 +45,11 @@ struct ScreenChar {
     color_code: ColorCode,
 }
 
+// vga buffer size
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
 
+// volatile so our writes are not optimized away
 #[repr(transparent)]
 struct Buffer {
     chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
@@ -76,11 +80,11 @@ impl Writer {
                 });
                 self.column_position += 1;
             }
-        
         }
     }
 
     fn new_line(&mut self) {
+        // skip first row, don't wanna break our buffer bounds when shifting a line up
         for row in 1..BUFFER_HEIGHT {
             for col in 0..BUFFER_WIDTH {
                 let character = self.buffer.chars[row][col].read();
@@ -104,6 +108,7 @@ impl Writer {
     pub fn write_string(&mut self, s: &str) {
         for byte in s.bytes() {
             match byte {
+                // valid textbyte or newline char
                 0x20..=0x7e | b'\n' => self.write_byte(byte),
                 _ => self.write_byte(0xfe),
             }
@@ -111,6 +116,7 @@ impl Writer {
     }
 }
 
+// used for write macros
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.write_string(s);
@@ -118,13 +124,19 @@ impl fmt::Write for Writer {
     }
 }
 
+// static so we dont need to move our writer around
+// lazy since enum values are not compile-time constants
+// Mutex since we need interior mutability (and spinlock)
 lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         column_position: 0,
         color_code: ColorCode::new(Color::Yellow, Color::Black),
+        // raw pointer to vga buffer memory
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer)},
     });
 }
+
+// macro syntax is weird, don't ask me anything about this
 
 #[macro_export]
 macro_rules! print {
