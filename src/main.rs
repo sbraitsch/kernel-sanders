@@ -50,6 +50,9 @@ pub enum QemuExitCode {
 pub fn exit_qemu(exit_code: QemuExitCode) {
     use x86_64::instructions::port::Port;
 
+    // using port io to tell qemu to close
+    // this behaviour is defined through the bootimage dependency (see cargo.toml)
+    // any write to 0xf4 causes qemu to exit with (value << 1) | 1 (success = 33, failure = 35)
     unsafe {
         let mut port = Port::new(0xf4);
         port.write(exit_code as u32);
